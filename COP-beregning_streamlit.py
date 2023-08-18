@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import streamlit as st
 import plotly.express as px
 import csv
@@ -20,12 +21,15 @@ with open("styles/main.css") as f:
 ## ------------------------------------------------------------------------------------------------------##
 
 @st.cache_data
-def plot_datablad():
-    # COP-Verdier fra datablad
-    databladtemp35 = np.array([-5,-2,0,2,5,10,15])
-    COP_data35 = np.array([3.68, 4.03, 4.23, 4.41, 4.56, 5.04, 5.42])
-    databladtemp45 = np.array([-2,0,2,5,10,15])
-    COP_data45 = np.array([3.3, 3.47, 3.61, 3.77, 4.11, 4.4])
+def plot_datablad(valg_av_vp):
+    if valg_av_vp == 'Mitsubishi CRHV-P600YA-HPB':
+        # COP-Verdier fra datablad
+        databladtemp35 = np.array([-5,-2,0,2,5,10,15])
+        COP_data35 = np.array([3.68, 4.03, 4.23, 4.41, 4.56, 5.04, 5.42])
+        databladtemp45 = np.array([-2,0,2,5,10,15])
+        COP_data45 = np.array([3.3, 3.47, 3.61, 3.77, 4.11, 4.4])
+    else:
+        pass
 
     #Kjører lineær regresjon på COP-verdier fra datablad:
     
@@ -35,14 +39,15 @@ def plot_datablad():
     # Plotter COP-verdier fra datablad
 
     fig = plt.figure()
-    plt.plot(databladtemp35,COP_data35,'o')
-    plt.plot(databladtemp45,COP_data45,'o')
-    plt.plot(databladtemp35,lin_COP_data35)
-    plt.plot(databladtemp45,lin_COP_data45)
+    plt.plot(databladtemp35,COP_data35,'o', color='#1d3c34')
+    plt.plot(databladtemp45,COP_data45,'o', color='#48a23f')
+    plt.plot(databladtemp35,lin_COP_data35, color='#1d3c34')
+    plt.plot(databladtemp45,lin_COP_data45, color='#48a23f')
     plt.legend(['Datablad 35 \u2103', 'Datablad 45 \u2103','Lineær 35 \u2103','Lineær 45 \u2103'])
-    plt.xlabel('Brønntemperatur (\u2103)')
+    plt.xlabel('Turtemperatur fra brønn (\u2103)')
     plt.ylabel('COP')
     plt.title('COP-verdier fra datablad, ved 100 % kapasitet', fontsize = 20)
+    plt.grid(True)
     st.pyplot(fig)
 
     # Parametre i uttrykket for den lineære regresjonen av COP fra datablad
@@ -131,37 +136,36 @@ class O_store_COP_beregning:
 
 
         st.subheader('Brønnkonfigurasjon')
-        c1, c2 = st.columns(2)
+        self.MIN_BRONNTEMP = st.number_input('Laveste tillatte gjennomsnittlige kollektorvæsketemperatur etter 25 år (\u2103)', value = float(0), step=0.1)
+        
+        c1,c2 = st.columns(2)
         with c1:
-            self.MIN_BRONNTEMP = st.number_input('Laveste tillatte gjennomsnittlige kollektorvæsketemperatur etter 25 år (\u2103)', value = float(0), step=0.1)
-        with c2:
             self.MAKS_DYBDE = st.number_input('Maksimal tillatte dybde per brønn (m)', value=300, step=10)
+        with c2:
+            self.DIAM = st.number_input('Diameter til brønnen (mm)', value=115, min_value=100, max_value = 150, step=1)
 
-        self.onsket_konfig = st.selectbox(label='Foretrukket brønnkonfigurasjon', options=['Linje','Kvadrat (tilnærmet)','Rektangel med fastsatt side','Boks','"L"-formet'], index=1)
+        self.onsket_konfig = st.selectbox(label='Foretrukket brønnkonfigurasjon', options=['Linje','"L"-formet','Kvadrat (tilnærmet)','Rektangel med fastsatt side','Boks','Boks med fastsatt side'], index=0)
         
         c1, c2 = st.columns(2)
         with c1:
             self.avstand = st.number_input('Avstand mellom nærliggende brønner (m)', value=15, min_value=1, step=1)
         with c2: 
-            if self.onsket_konfig == 'Rektangel med fastsatt side':
-                self.fastsatt_side = st.number_input('Antall brønner langs en side av rektangelet', value=2, min_value=2, step=1)
+            if self.onsket_konfig == 'Rektangel med fastsatt side' or self.onsket_konfig == 'Boks med fastsatt side':
+                self.fastsatt_side = st.number_input('Antall brønner langs en side', value=2, min_value=2, step=1)
         st.markdown('---')
 
         st.subheader('Valg av varmepumpe')
         c1, c2, = st.columns(2)
         with c1:
-            type_VP = st.selectbox(label='Velg varmepumpe',options=['Eksempel-VP', 'VP 2', 'VP 3', 'VP 4'])
+            self.type_VP = st.selectbox(label='Velg varmepumpe',options=['Mitsubishi CRHV-P600YA-HPB', 'VP 2', 'VP 3', 'VP 4'])
         with c2:
             self.VIRKGRAD = st.number_input('Virkningsgrad til kompressor (%)',value=80, max_value=100, min_value=10, step=1)/100
 
-        if type_VP == 'Eksempel-VP':
-            [self.stigtall35,self.konstledd35,self.stigtall45,self.konstledd45] = plot_datablad()
-            self.MAKS_TURTEMP = 45
-            self.MIN_TURTEMP = 35
-        elif type_VP == 'VP 2':
-            pass
-
-        
+       
+        [self.stigtall35,self.konstledd35,self.stigtall45,self.konstledd45] = plot_datablad(self.type_VP)
+        self.MAKS_TURTEMP = 45
+        self.MIN_TURTEMP = 35
+    
         c1, c2 = st.columns(2)
         with c1:
             st.metric("Maksimal turtemperatur", f"{self.MAKS_TURTEMP} \u2103")
@@ -193,11 +197,15 @@ class O_store_COP_beregning:
         st.markdown('---')
 
         st.subheader('Varmebehov')
-        self.varmelast_fil = st.file_uploader('CSV-fil med timesoppløst varmeenergibehov for et år',type='csv')
+        #self.varmelast_fil = st.file_uploader('CSV-fil med timesoppløst varmeenergibehov for et år',type='csv')
+        self.varmelast_fil = st.file_uploader('Last opp Excel-fil med to kolonner som inneholder hhv. varmeenergibehov og utelufttemperatur, begge med timesoppløsning over ett år.',type='xlsx')
         self.DEKGRAD = st.number_input('Ønsket dekningsgrad (%)',value=90, max_value=100, min_value=1, step=1)/100
-
-        self.kjor_knapp = st.checkbox('Kjør :steam_locomotive:')
         
+        st.markdown('')
+        c1,c2,c3,c4,c5,c6,c7= st.columns(7)
+        with c4:
+            self.kjor_knapp = st.button(' Kjør 🚂 ')
+
         st.markdown('---')
 
 
@@ -206,23 +214,12 @@ class O_store_COP_beregning:
         self.DYBDE_STARTGJETT = 250          # Resultat uavhengig av denne
         self.TERM_MOTSTAND = 0.08
 
-    def last_inn_varmebehov(self):
-        @st.cache_data
-        def last_inn_energibehov_csv(filnavn):
-            dato = []
-            varmelast = []
-            utetemp =[]
-            
-            with open(filnavn,'r') as csvfile:
-                lines = csv.reader(csvfile, delimiter='\t')
-                for row in lines:
-                    dato.append(row[0])
-                    utetemp.append(float(row[4]))
-                    varmelast.append(float(row[7]))
-
-            return dato,utetemp,varmelast
-
-        [self.dato,self.utetemp,self.varmelast] = last_inn_energibehov_csv(self.varmelast_fil.name)
+    def last_inn_varmebehov(self): 
+        df = pd.read_excel(self.varmelast_fil)
+        df = df.to_numpy()
+        df = np.swapaxes(df,0,1)
+        self.varmelast = df[0,:]
+        self.utetemp = df[1,:]
 
     def grunnlast_fra_varmelast(self):
         @st.cache_data
@@ -249,7 +246,7 @@ class O_store_COP_beregning:
                 if np.sum(grunnlast)/(np.sum(varmelast))<DEKGRAD:
                     break
 
-            grunnlast = np.array(grunnlast)*8
+            grunnlast = np.array(grunnlast)
             GRUNNLAST = np.hstack(ANTALL_AAR*[grunnlast])
             return GRUNNLAST
 
@@ -260,18 +257,18 @@ class O_store_COP_beregning:
         data = GroundData(self.LEDNINGSEVNE, self.UFORST_TEMP, self.TERM_MOTSTAND, 2.518 * 10**6)    # Siste parameter: Volumetric heat capacity of ground
         
         if self.onsket_konfig == '"L"-formet':
-            bronnfelt = gt.boreholes.L_shaped_field(N_1=antall_bronner1, N_2=antall_bronner2, B_1=self.avstand, B_2=self.avstand, H=dybde_GHE, D = 10, r_b = 0.114)
+            bronnfelt = gt.boreholes.L_shaped_field(N_1=antall_bronner1, N_2=antall_bronner2, B_1=self.avstand, B_2=self.avstand, H=dybde_GHE, D = 10, r_b = float(self.DIAM)/2000)
             self.tot_ant_bronner = antall_bronner1+antall_bronner2-1
         
-        elif self.onsket_konfig == 'Boks':
-            bronnfelt = gt.boreholes.box_shaped_field(N_1=antall_bronner1, N_2=antall_bronner2, B_1=self.avstand, B_2=self.avstand, H=dybde_GHE, D = 10, r_b = 0.114)
+        elif self.onsket_konfig == 'Boks' or self.onsket_konfig == 'Boks med fastsatt side':
+            bronnfelt = gt.boreholes.box_shaped_field(N_1=antall_bronner1, N_2=antall_bronner2, B_1=self.avstand, B_2=self.avstand, H=dybde_GHE, D = 10, r_b = float(self.DIAM)/2000)
             if antall_bronner1>=3 and antall_bronner2>=2:
                 self.tot_ant_bronner = 2*antall_bronner2+2*(antall_bronner1-2)
             else:
                 self.tot_ant_bronner = antall_bronner1*antall_bronner2
         
         else:
-            bronnfelt = gt.boreholes.rectangle_field(N_1=antall_bronner1, N_2=antall_bronner2, B_1=self.avstand, B_2=self.avstand, H=dybde_GHE, D = 10, r_b = 0.114) # Siste to parametre: Boreholde buried depth og borehole radius (m)
+            bronnfelt = gt.boreholes.rectangle_field(N_1=antall_bronner1, N_2=antall_bronner2, B_1=self.avstand, B_2=self.avstand, H=dybde_GHE, D = 10, r_b = float(self.DIAM)/2000) # Siste to parametre: Boreholde buried depth og borehole radius (m)
             self.tot_ant_bronner = antall_bronner1*antall_bronner2
         
         borefield_gt = bronnfelt
@@ -304,15 +301,15 @@ class O_store_COP_beregning:
         TURTEMP = np.hstack(self.ANTALL_AAR*[turtemp])
 
         COP = np.array([self.COP]*8760*self.ANTALL_AAR)
-
         self.dybde_GHE = self.DYBDE_STARTGJETT
         ant_bronner1 = 1
         
-        if self.onsket_konfig == 'Rektangel med fastsatt side':
+        if self.onsket_konfig == 'Rektangel med fastsatt side' or self.onsket_konfig == 'Boks med fastsatt side':
             ant_bronner2 = self.fastsatt_side
         else:
             ant_bronner2 = 1
 
+        # For-løkke --------------------------------------------------------------------------------------------------------------------------------------------
         for k in range(0,20):
 
             BRONNLAST = bronnlast_fra_COP(self.GRUNNLAST,COP,self.VIRKGRAD)
@@ -331,7 +328,6 @@ class O_store_COP_beregning:
             print(ant_bronner1)
             print(ant_bronner2)
             
-
             nyCOP = finn_ny_COP(self.bronntemp_tur,self.stigtall35,self.konstledd35,self.stigtall45,self.konstledd45,TURTEMP,self.MAKS_TURTEMP,self.MIN_TURTEMP)
             
             if np.mean(np.abs(nyCOP-COP))<0.1 and self.dybde_GHE <= self.MAKS_DYBDE: 
@@ -341,14 +337,13 @@ class O_store_COP_beregning:
                     ant_bronner1 = ant_per_side-1
                     ant_bronner2 = ant_per_side
 
-                elif self.onsket_konfig == 'Boks' and ant_bronner2 == 1 and ant_bronner1 >= 4:
-                    if ant_bronner1 == 4:
+                elif self.onsket_konfig == 'Boks' and ant_bronner2 == 1 and ant_bronner1 >= 3:
+                    if ant_bronner1 == 3 or ant_bronner1 == 4:
                         ant_bronner1 = 2
                         ant_bronner2 = 2
                     elif ant_bronner1 == 5 or ant_bronner1 == 6:
                         ant_bronner1 = 3
                         ant_bronner2 = 2
-
                     else:
                         ant_per_side = math.ceil(np.sqrt(ant_bronner1))
                         ant_bronner1 = ant_per_side
@@ -362,7 +357,7 @@ class O_store_COP_beregning:
                         ant_bronner2 = ant_per_side
                     ant_bronner1 = ant_per_side
                 
-                elif self.onsket_konfig == 'Rektangel med fastsatt side':
+                elif self.onsket_konfig == 'Rektangel med fastsatt side' or self.onsket_konfig == 'Boks med fastsatt side':
                     break
                 elif self.onsket_konfig == 'Sirkel':
                     break
@@ -371,6 +366,7 @@ class O_store_COP_beregning:
             else:
                 COP = nyCOP
             print('Antall iterasjoner:', k+1)
+        # -------------------------------------------------------------------------------------------------------------------------------------------
 
         self.ant_bronner1 = ant_bronner1
         self.ant_bronner2 = ant_bronner2
@@ -384,7 +380,7 @@ class O_store_COP_beregning:
         with c1:
             if self.onsket_konfig == '"L"-formet':
                 st.metric("Brønnkonfigurasjon", f"{self.ant_bronner1} x {self.ant_bronner2} (L)")
-            elif self.onsket_konfig == 'Boks':
+            elif self.onsket_konfig == 'Boks' or self.onsket_konfig == 'Boks med fastsatt side':
                 st.metric("Brønnkonfigurasjon", f"{self.ant_bronner1} x {self.ant_bronner2} (Boks)")
             else:
                 st.metric("Brønnkonfigurasjon", f"{self.ant_bronner1} x {self.ant_bronner2}")
@@ -392,7 +388,6 @@ class O_store_COP_beregning:
             st.metric("Totalt antall brønner", f"{self.tot_ant_bronner}")
         with c3:
             st.metric("Dybden til hver brønn", f"{round(self.dybde_GHE,1)} m")
-
         
         r = self.ant_bronner2
         c = self.ant_bronner1
@@ -402,7 +397,7 @@ class O_store_COP_beregning:
         if self.onsket_konfig == '"L"-formet':
             ax2.scatter(x,np.zeros(len(x)),color = '#367A2F')
             ax2.scatter(np.zeros(len(y)),y,color = '#367A2F')
-        elif self.onsket_konfig == 'Boks':
+        elif self.onsket_konfig == 'Boks' or 'Boks med fastsatt side':
             ax2.scatter(x,np.zeros(len(x)),color = '#367A2F')
             ax2.scatter(np.zeros(len(y)),y,color = '#367A2F')
             ax2.scatter(x,np.ones(len(x))*y[-1],color = '#367A2F')
@@ -420,6 +415,9 @@ class O_store_COP_beregning:
         ax2.axis('equal')
         st.pyplot(fig2)
 
+        if self.dybde_GHE <= 0.8*self.MAKS_DYBDE and self.onsket_konfig != 'Linje' and self.onsket_konfig != '"L"-formet' and self.tot_ant_bronner >= 3:
+            st.markdown(':red[MERK: Denne konfigurasjonen og det gitte forbruket gir sannsynligvis flere og grunnere brønner enn nødvendig. Prøv eventuelt å endre brønnkonfigurasjon i menyen over til Linje eller "L"-formet.]')
+
         st.subheader('Brønntemperatur')
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -428,6 +426,17 @@ class O_store_COP_beregning:
             st.metric("Laveste returtemp. (til brønn)", f"{round(np.min(self.bronntemp_retur),2)} \u2103")
         with c3:
             st.metric("Laveste veggtemp. i brønnen", f"{round(np.min(self.bronntemp_vegg),2)} \u2103")
+
+        fig = plt.figure()
+        plt.plot(self.bronntemp_retur,color = '#367A2F')
+        plt.plot(self.bronntemp_tur,color = '#1d3c34')
+        plt.plot(self.bronntemp_vegg,color = '#FFC358')
+        plt.title((f'Brønntemperaturen gjennom {self.ANTALL_AAR} år'), fontsize = 20)
+        plt.xlabel('Timer')
+        plt.ylabel("Temperatur (\u2103)")
+        plt.legend(['Returtemperatur til brønn','Turtemperatur fra brønn','Veggtemperatur i brønn'])
+        plt.grid(True)
+        st.pyplot(fig)
 
         st.subheader('COP')
         snittCOP = round(np.mean(self.COP),2)
@@ -438,6 +447,51 @@ class O_store_COP_beregning:
             st.metric("Minimal COP", f"{round(np.min(self.COP),2)}")
         with c3:
             st.metric("Gjennomsnittlig COP", f"{snittCOP}")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            fig = plt.figure()
+            plt.plot(self.COP,color = '#367A2F')
+            plt.plot(np.array([snittCOP]*len(self.COP)),color='#FFC358')
+            plt.title((f'Variasjoner i COP gjennom {self.ANTALL_AAR} år'), fontsize = 20)
+            plt.xlabel('Timer')
+            plt.ylabel("COP")
+            plt.legend(['COP','Gjennomsnitt'])
+            plt.grid(True)
+            st.pyplot(fig)
+        with c2:
+            fig = plt.figure()
+            plt.plot(self.COP[-8760:],color = '#367A2F')
+            plt.plot(np.array([snittCOP]*8760),color='#FFC358')
+            plt.title('Variasjoner i COP gjennom siste år', fontsize = 20)
+            plt.xlabel('Timer')
+            plt.ylabel("COP")
+            plt.legend(['COP','Gjennomsnitt'])
+            plt.grid(True)
+            st.pyplot(fig)
+
+        c1, c2 = st.columns(2)
+        with c1:
+            fig = plt.figure()
+            plt.plot(self.utetemp,self.COP[-8760:],'.',color = '#367A2F')
+            plt.title(('COP som funksjon av utetemp. (ett år)'), fontsize = 20)
+            plt.xlabel('Utetemp (\u2103)')
+            plt.ylabel("COP")
+            plt.grid(True)
+            #plt.legend(['Returtemperatur til brønn','Brønntemperatur'])
+            st.pyplot(fig)
+        with c2:
+            fig = plt.figure()
+            plt.plot(self.bronntemp_tur[-8760:],self.COP[-8760:],'.',color = '#367A2F')
+            plt.title(('COP som funksjon av turtemp., siste år'), fontsize = 20)
+            plt.xlabel('Turtemp (\u2103)')
+            plt.ylabel("COP")
+            plt.grid(True)
+            #plt.legend(['Returtemperatur til brønn','Brønntemperatur'])
+            st.pyplot(fig)
+
+        st.markdown('---')
+
 
 
 O_store_COP_beregning().kjor_hele()

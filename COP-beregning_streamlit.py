@@ -67,68 +67,6 @@ def bronnlast_fra_COP(grunnlast,cop,virkgrad):
     return bronnlast
 
 
-def GHE_tool_bronndybde(bronnlast,min_bronntemp,dybde_startgjett,ledningsevne,uforst_temp,term_motstand,antall_aar,bronnfelt):
-    data = GroundData(ledningsevne, uforst_temp, term_motstand, 2.518 * 10**6)    # Siste parameter: Volumetric heat capacity of ground
-    
-    #borefield_gt = gt.boreholes.rectangle_field(N_1=ant_bronner1, N_2=ant_bronner2, B_1=10, B_2=10, H=dybde_startgjett, D = 10, r_b = 0.114) # Siste to parametre: Boreholde buried depth og borehole radius (m)
-    borefield_gt = bronnfelt
-
-    borefield = Borefield(simulation_period=antall_aar)
-    borefield.set_ground_parameters(data)
-    borefield.set_borefield(borefield_gt)        
-    #borefield.set_hourly_heating_load(bronnlast)
-
-    borefield.hourly_heating_load = bronnlast[-8760:]
-    borefield.hourly_cooling_load = np.zeros(8760)
-
-    borefield.set_max_ground_temperature(16)   # maximum temperature   Utgjør ingen forskjell å endre på denne.
-    borefield.set_min_ground_temperature(min_bronntemp)    # minimum temperature
-    dybde = borefield.size(dybde_startgjett, L4_sizing=True)
-    
-    snitt_koll_vaeske_temp = borefield.results_peak_heating
-    bronntemp_vegg = borefield.Tb
-    #SETT INN DELTA T BEREGNING
-    bronntemp_tur = snitt_koll_vaeske_temp + 1.5
-    bronntemp_retur = snitt_koll_vaeske_temp - 1.5
-
-
-    print('Nødvendig brønndybde (GHE-tool):',dybde,'m.')
-    return dybde,bronntemp_vegg,bronntemp_tur,bronntemp_retur
-
-
-def kjor_pygf(bronnlast_data,bronndybde,antall_aar,ledningsevne,uforst_temp):
-    # Beregning av brønntemperatur vha. Magnes pygfunction-kode:
-    import pygfunction_Magne
-    pygf = pygfunction_Magne.Simulation()                           # For at dette skal fungere, må det velges "Rektangulær" i pygfunction-filen
-    pygf.select_borehole_field(1)               #Antall brønner 
-    pygf.YEARS = antall_aar
-    pygf.U_PIPE = "Single"  # Choose between "Single" and "Double"
-    pygf.R_B = 0.114  # Radius (m)
-    pygf.R_OUT = 0.020  # Pipe outer radius (m)
-    pygf.R_IN = 0.0176  # Pipe inner radius (m)
-    pygf.D_S = 0.067/2  # Shank spacing (m)
-    pygf.EPSILON = 1.0e-6  # Pipe roughness (m)
-    pygf.ALPHA = 1.39e-6  # Ground thermal diffusivity (m2/s)
-    pygf.K_S = ledningsevne  # Ground thermal conductivity (W/m.K)            
-    pygf.T_G = uforst_temp  # Undisturbed ground temperature (degrees)   
-    pygf.K_G = 2  # Grout thermal conductivity (W/m.K)
-    pygf.K_P = 0.42  # Pipe thermal conductivity (W/m.K)
-    pygf.H = bronndybde  # Borehole depth (m)
-    pygf.B = 15  # Distance between boreholes (m)
-    pygf.D = 10  # Borehole buried depth
-    pygf.FLOW_RATE = 0.5  # Flow rate (kg/s)
-    pygf.FLUID_NAME = "MPG"  # The fluid is propylene-glycol 
-    pygf.FLUID_DEGREES = 5  # at 20 \u2103
-    pygf.BOUNDARY_CONDITION = 'MIFT'
-    pygf.run_simulation(np.array(bronnlast_data)) #Grunnlast i enhet kW
-
-    print(pygf.R_B)
-    nybronntemp = pygf.tf_out
-    returtemp = pygf.tf_in
-    term_motstand = pygf.R_B
-    return nybronntemp,returtemp,term_motstand
-
-
 def bestem_turtemp(utetemp,utetemp_for_maks_turtemp,utetemp_for_min_turtemp,maks_turtemp,min_turtemp):
     turtemp = np.zeros(len(utetemp))
     for i in range(0,len(utetemp)):
@@ -169,10 +107,12 @@ class O_store_COP_beregning:
     
     def kjor_hele(self):
         self.streamlit_input()
-        if self.kjor_knapp == True:
-            self.last_inn_varmebehov()
-            self.grunnlast_fra_varmelast()
-            self.dybde_COP_sloyfe()
+        with st.spinner("Grubler ... 🤔"):
+            if self.kjor_knapp == True:
+                self.last_inn_varmebehov()
+                self.grunnlast_fra_varmelast()
+                self.dybde_COP_sloyfe()
+                self.skriv_ut_resultater()
 
 
     def streamlit_input(self): 
@@ -195,9 +135,9 @@ class O_store_COP_beregning:
         with c1:
             self.MIN_BRONNTEMP = st.number_input('Laveste tillatte gjennomsnittlige kollektorvæsketemperatur etter 25 år (\u2103)', value = float(0), step=0.1)
         with c2:
-            self.MAKS_DYBDE = st.number_input('.Maksimal tillatte dybde per brønn (m)', value=300, step=10)
+            self.MAKS_DYBDE = st.number_input('Maksimal tillatte dybde per brønn (m)', value=300, step=10)
 
-        self.onsket_konfig = st.selectbox(label='Foretrukket brønnkonfigurasjon', options=['Linje','Kvadrat (tilnærmet)','Rektangel med fastsatt side'], index=1)
+        self.onsket_konfig = st.selectbox(label='Foretrukket brønnkonfigurasjon', options=['Linje','Kvadrat (tilnærmet)','Rektangel med fastsatt side','Boks','"L"-formet'], index=1)
         
         c1, c2 = st.columns(2)
         with c1:
@@ -230,9 +170,26 @@ class O_store_COP_beregning:
         
         c1,c2 = st.columns(2)
         with c1:
-            self.UTETEMP_FOR_MAKS_TURTEMP = st.number_input('Høyeste utetemperatur med maksimal turtemperatur', value=-15)
+            self.UTETEMP_FOR_MAKS_TURTEMP = st.number_input('Utetemperatur som gir denne turtemperaturen*', value=-15)
         with c2:
-            self.UTETEMP_FOR_MIN_TURTEMP = st.number_input('Laveste utetemperatur med minimal turtemperatur', value=15)
+            self.UTETEMP_FOR_MIN_TURTEMP = st.number_input('Utetemperatur som gir denne turtemperaturen*', value=15)
+        st.markdown('* \* Det antas her at varmepumpen kjører med konstant kapasitet hele tiden, slik at COP kun avhenger av brønntemperatur og turtemperatur (sistnevnte avhenger videre utelufttemperatur). Dette innebærer at kompressoren er turtallsregulert. I mange anlegg vil COP også avhenge av kapasiteten, som igjen bestemmes av energibehovet.')
+        
+        heat_carrier_fluid_types = ["HX24", "HX35", "Kilfrost GEO 24%", "Kilfrost GEO 32%", "Kilfrost GEO 35%"]
+        heat_carrier_fluid_densities = [970.5, 955, 1105.5, 1136.2, 1150.6]
+        heat_carrier_fluid_capacities = [4.298, 4.061, 3.455, 3.251, 3.156]
+
+        c1,c2 = st.columns(2)
+        with c1:
+            self.TYPE_KOLL_VAESKE = st.selectbox('Type kollektorvæske i varmepumpen', options=heat_carrier_fluid_types, index=0)
+        with c2:
+            self.VOLSTROM_KOLLVAESKE = st.number_input('Volumstrøm til kollektorvæsken (l/s/brønn)', value=0.5, min_value=0.1, step=0.1)
+        
+        for i in range(0,len(heat_carrier_fluid_types)):
+            if self.TYPE_KOLL_VAESKE == heat_carrier_fluid_types[i]:
+                self.fluid_tetthet = heat_carrier_fluid_densities[i]
+                self.fluid_kapasitet = heat_carrier_fluid_capacities[i]
+    
         st.markdown('---')
 
         st.subheader('Varmebehov')
@@ -292,11 +249,54 @@ class O_store_COP_beregning:
                 if np.sum(grunnlast)/(np.sum(varmelast))<DEKGRAD:
                     break
 
-            grunnlast = np.array(grunnlast)*20
+            grunnlast = np.array(grunnlast)*8
             GRUNNLAST = np.hstack(ANTALL_AAR*[grunnlast])
             return GRUNNLAST
 
         self.GRUNNLAST = grunnlast_fra_varmelast(self.varmelast,self.DEKGRAD,self.ANTALL_AAR)
+
+
+    def GHE_tool_bronndybde(self,antall_bronner1,antall_bronner2,bronnlast,dybde_GHE):
+        data = GroundData(self.LEDNINGSEVNE, self.UFORST_TEMP, self.TERM_MOTSTAND, 2.518 * 10**6)    # Siste parameter: Volumetric heat capacity of ground
+        
+        if self.onsket_konfig == '"L"-formet':
+            bronnfelt = gt.boreholes.L_shaped_field(N_1=antall_bronner1, N_2=antall_bronner2, B_1=self.avstand, B_2=self.avstand, H=dybde_GHE, D = 10, r_b = 0.114)
+            self.tot_ant_bronner = antall_bronner1+antall_bronner2-1
+        
+        elif self.onsket_konfig == 'Boks':
+            bronnfelt = gt.boreholes.box_shaped_field(N_1=antall_bronner1, N_2=antall_bronner2, B_1=self.avstand, B_2=self.avstand, H=dybde_GHE, D = 10, r_b = 0.114)
+            if antall_bronner1>=3 and antall_bronner2>=2:
+                self.tot_ant_bronner = 2*antall_bronner2+2*(antall_bronner1-2)
+            else:
+                self.tot_ant_bronner = antall_bronner1*antall_bronner2
+        
+        else:
+            bronnfelt = gt.boreholes.rectangle_field(N_1=antall_bronner1, N_2=antall_bronner2, B_1=self.avstand, B_2=self.avstand, H=dybde_GHE, D = 10, r_b = 0.114) # Siste to parametre: Boreholde buried depth og borehole radius (m)
+            self.tot_ant_bronner = antall_bronner1*antall_bronner2
+        
+        borefield_gt = bronnfelt
+
+        borefield = Borefield(simulation_period=self.ANTALL_AAR)
+        borefield.set_ground_parameters(data)
+        borefield.set_borefield(borefield_gt)        
+        #borefield.set_hourly_heating_load(bronnlast)
+
+        borefield.hourly_heating_load = bronnlast[-8760:]
+        borefield.hourly_cooling_load = np.zeros(8760)
+
+        borefield.set_max_ground_temperature(16)   # maximum temperature   Utgjør ingen forskjell å endre på denne.
+        borefield.set_min_ground_temperature(self.MIN_BRONNTEMP)    # minimum temperature
+        
+        self.dybde_GHE = borefield.size(dybde_GHE, L4_sizing=True)
+        self.bronntemp_vegg = borefield.Tb
+        
+        snitt_koll_vaeske_temp = borefield.results_peak_heating
+
+        Q = (bronnlast)/self.tot_ant_bronner
+        delta_T = (Q*1000)/(self.fluid_tetthet*self.VOLSTROM_KOLLVAESKE*self.fluid_kapasitet)
+
+        self.bronntemp_tur = snitt_koll_vaeske_temp + delta_T/2
+        self.bronntemp_retur = snitt_koll_vaeske_temp - delta_T/2   
 
     def dybde_COP_sloyfe(self):
         
@@ -305,7 +305,7 @@ class O_store_COP_beregning:
 
         COP = np.array([self.COP]*8760*self.ANTALL_AAR)
 
-        dybde_GHE = self.DYBDE_STARTGJETT
+        self.dybde_GHE = self.DYBDE_STARTGJETT
         ant_bronner1 = 1
         
         if self.onsket_konfig == 'Rektangel med fastsatt side':
@@ -317,32 +317,50 @@ class O_store_COP_beregning:
 
             BRONNLAST = bronnlast_fra_COP(self.GRUNNLAST,COP,self.VIRKGRAD)
 
-            bronnfelt = gt.boreholes.rectangle_field(N_1=ant_bronner1, N_2=ant_bronner2, B_1=self.avstand, B_2=self.avstand, H=dybde_GHE, D = 10, r_b = 0.114) # Siste to parametre: Boreholde buried depth og borehole radius (m)
+            self.GHE_tool_bronndybde(ant_bronner1,ant_bronner2,BRONNLAST,self.dybde_GHE)
 
-            [dybde_GHE,bronntemp_vegg,bronntemp_tur,bronntemp_retur] = GHE_tool_bronndybde(BRONNLAST,self.MIN_BRONNTEMP,dybde_GHE,self.LEDNINGSEVNE,self.UFORST_TEMP,self.TERM_MOTSTAND,self.ANTALL_AAR,bronnfelt)
-
-            if k==0 and dybde_GHE >= self.MAKS_DYBDE:
-                ant_bronner1 = math.ceil(dybde_GHE/self.MAKS_DYBDE) #runder alltid opp
+            if k==0 and self.dybde_GHE >= self.MAKS_DYBDE:
+                ant_bronner1 = math.ceil(self.dybde_GHE/self.MAKS_DYBDE) #runder alltid opp
                 print(ant_bronner1)
 
-            print('DYBDE:',dybde_GHE)
+            print('DYBDE:',self.dybde_GHE)
 
-            if k > 0 and dybde_GHE >= self.MAKS_DYBDE:
+            if k > 0 and self.dybde_GHE >= self.MAKS_DYBDE:
                 ant_bronner1 = ant_bronner1+1
             
             print(ant_bronner1)
             print(ant_bronner2)
             
-            #[bronntemp,returtemp,TERM_MOTSTAND] = kjor_pygf(BRONNLAST,dybde_GHE,ANTALL_AAR,LEDNINGSEVNE,UFORST_TEMP)
 
-            nyCOP = finn_ny_COP(bronntemp_tur,self.stigtall35,self.konstledd35,self.stigtall45,self.konstledd45,TURTEMP,self.MAKS_TURTEMP,self.MIN_TURTEMP)
+            nyCOP = finn_ny_COP(self.bronntemp_tur,self.stigtall35,self.konstledd35,self.stigtall45,self.konstledd45,TURTEMP,self.MAKS_TURTEMP,self.MIN_TURTEMP)
             
-            if np.mean(np.abs(nyCOP-COP))<0.001 and dybde_GHE <= self.MAKS_DYBDE: 
+            if np.mean(np.abs(nyCOP-COP))<0.1 and self.dybde_GHE <= self.MAKS_DYBDE: 
                 COP = nyCOP
-                if self.onsket_konfig == 'Kvadrat (tilnærmet)' and ant_bronner2 == 1:
+                if self.onsket_konfig == 'Kvadrat (tilnærmet)' and ant_bronner2 == 1 and ant_bronner1 != 1:
                     ant_per_side = math.ceil(np.sqrt(ant_bronner1))
-                    ant_bronner1 = ant_per_side
+                    ant_bronner1 = ant_per_side-1
                     ant_bronner2 = ant_per_side
+
+                elif self.onsket_konfig == 'Boks' and ant_bronner2 == 1 and ant_bronner1 >= 4:
+                    if ant_bronner1 == 4:
+                        ant_bronner1 = 2
+                        ant_bronner2 = 2
+                    elif ant_bronner1 == 5 or ant_bronner1 == 6:
+                        ant_bronner1 = 3
+                        ant_bronner2 = 2
+
+                    else:
+                        ant_per_side = math.ceil(np.sqrt(ant_bronner1))
+                        ant_bronner1 = ant_per_side
+                        ant_bronner2 = ant_per_side
+
+                elif self.onsket_konfig == '"L"-formet' and ant_bronner2 == 1 and ant_bronner1 >= 3:
+                    ant_per_side = math.ceil(ant_bronner1/2)
+                    if (ant_bronner1 % 2) == 0: #partall
+                        ant_bronner2 = ant_per_side+1
+                    else: #oddetall
+                        ant_bronner2 = ant_per_side
+                    ant_bronner1 = ant_per_side
                 
                 elif self.onsket_konfig == 'Rektangel med fastsatt side':
                     break
@@ -352,24 +370,45 @@ class O_store_COP_beregning:
                     break
             else:
                 COP = nyCOP
+            print('Antall iterasjoner:', k+1)
 
+        self.ant_bronner1 = ant_bronner1
+        self.ant_bronner2 = ant_bronner2
+        self.COP = COP
 
+    def skriv_ut_resultater(self):
+
+        st.header('Resultater')
+        st.subheader('Foreslått brønnkonfigurasjon')
         c1, c2, c3 = st.columns(3)
         with c1:
-            st.metric("Brønnkonfigurasjon", f"{ant_bronner1} x {ant_bronner2}")
+            if self.onsket_konfig == '"L"-formet':
+                st.metric("Brønnkonfigurasjon", f"{self.ant_bronner1} x {self.ant_bronner2} (L)")
+            elif self.onsket_konfig == 'Boks':
+                st.metric("Brønnkonfigurasjon", f"{self.ant_bronner1} x {self.ant_bronner2} (Boks)")
+            else:
+                st.metric("Brønnkonfigurasjon", f"{self.ant_bronner1} x {self.ant_bronner2}")
         with c2:
-            st.metric("Totalt antall brønner", f"{ant_bronner1*ant_bronner2}")
+            st.metric("Totalt antall brønner", f"{self.tot_ant_bronner}")
         with c3:
-            st.metric("Dybden til hver brønn", f"{round(dybde_GHE,1)} m")
+            st.metric("Dybden til hver brønn", f"{round(self.dybde_GHE,1)} m")
 
         
-        r = ant_bronner2
-        c = ant_bronner1
+        r = self.ant_bronner2
+        c = self.ant_bronner1
         x = [i % c * self.avstand for i in range(r*c)]
         y = [i // c * self.avstand for i in range(r*c)]
         fig2, ax2 = plt.subplots()
-        ax2.scatter(x,y,color = '#367A2F')
-
+        if self.onsket_konfig == '"L"-formet':
+            ax2.scatter(x,np.zeros(len(x)),color = '#367A2F')
+            ax2.scatter(np.zeros(len(y)),y,color = '#367A2F')
+        elif self.onsket_konfig == 'Boks':
+            ax2.scatter(x,np.zeros(len(x)),color = '#367A2F')
+            ax2.scatter(np.zeros(len(y)),y,color = '#367A2F')
+            ax2.scatter(x,np.ones(len(x))*y[-1],color = '#367A2F')
+            ax2.scatter(np.ones(len(y))*x[-1],y,color = '#367A2F')
+        else:
+            ax2.scatter(x,y,color = '#367A2F')
         x_ticks = [i * self.avstand for i in range(c)]
         y_ticks = [i * self.avstand for i in range(r)]
         ax2.set_xticks(x_ticks)
@@ -381,43 +420,24 @@ class O_store_COP_beregning:
         ax2.axis('equal')
         st.pyplot(fig2)
 
-
+        st.subheader('Brønntemperatur')
         c1, c2, c3 = st.columns(3)
         with c1:
-            st.metric("Laveste turtemp. (fra brønn)", f"{round(np.min(bronntemp_tur),2)} \u2103")
+            st.metric("Laveste turtemp. (fra brønn)", f"{round(np.min(self.bronntemp_tur),2)} \u2103")
         with c2:
-            st.metric("Laveste returtemp. (til brønn)", f"{round(np.min(bronntemp_retur),2)} \u2103")
+            st.metric("Laveste returtemp. (til brønn)", f"{round(np.min(self.bronntemp_retur),2)} \u2103")
         with c3:
-            st.metric("Laveste veggtemp. i brønnen", f"{round(np.min(bronntemp_vegg),2)} \u2103")
+            st.metric("Laveste veggtemp. i brønnen", f"{round(np.min(self.bronntemp_vegg),2)} \u2103")
 
-        snittCOP = round(np.mean(COP),2)
+        st.subheader('COP')
+        snittCOP = round(np.mean(self.COP),2)
         c1, c2, c3 = st.columns(3)
         with c1:
-            st.metric("Maksimal COP", f"{round(np.max(COP),2)}")
+            st.metric("Maksimal COP", f"{round(np.max(self.COP),2)}")
         with c2:
-            st.metric("Minimal COP", f"{round(np.min(COP),2)}")
+            st.metric("Minimal COP", f"{round(np.min(self.COP),2)}")
         with c3:
             st.metric("Gjennomsnittlig COP", f"{snittCOP}")
-            
-
-
-        
-        #print('')
-        #print('---------------------------------------------')
-        #print('Brønndybde: \t \t',round(dybde_GHE,3),'m')
-        #print('Minste turtemp: \t',round(np.min(bronntemp_tur),3),'\u2103')
-        #print('Minste returtemp: \t',round(np.min(bronntemp_retur),3),'\u2103')
-        #print('Minste veggtemp: \t',round(np.min(bronntemp_vegg),3),'\u2103')
-        #print('Gjennomsnittlig COP: \t',snittCOP)
-        #print('Laveste COP-verdi: \t',round(np.min(COP),3))
-        #print('')
-        #print('Brønnlast gitt denne COP:')
-        #print(BRONNLAST)
-        #print('')
-        #print(bronntemp_tur)
-        #print(bronntemp_retur)
-
-
 
 
 O_store_COP_beregning().kjor_hele()

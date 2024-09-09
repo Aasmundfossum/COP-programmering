@@ -3,7 +3,6 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 import csv
-import numpy as np
 import matplotlib.pyplot as plt
 from GHEtool import Borefield, FluidData, GroundData, PipeData
 import pygfunction as gt
@@ -177,7 +176,7 @@ class O_store_COP_beregning:
             self.UTETEMP_FOR_MAKS_TURTEMP = st.number_input('Utetemperatur som gir denne turtemperaturen*', value=-15)
         with c2:
             self.UTETEMP_FOR_MIN_TURTEMP = st.number_input('Utetemperatur som gir denne turtemperaturen*', value=15)
-        st.markdown('* \* Det antas her at varmepumpen kjører med konstant kapasitet hele tiden, slik at COP kun avhenger av brønntemperatur og turtemperatur (sistnevnte avhenger videre utelufttemperatur). Dette innebærer at kompressoren er turtallsregulert. I mange anlegg vil COP også avhenge av kapasiteten, som igjen bestemmes av energibehovet.')
+        #st.markdown('* \* Det antas her at varmepumpen kjører med konstant kapasitet hele tiden, slik at COP kun avhenger av brønntemperatur og turtemperatur (sistnevnte avhenger videre utelufttemperatur). Dette innebærer at kompressoren er turtallsregulert. I mange anlegg vil COP også avhenge av kapasiteten, som igjen bestemmes av energibehovet.')
         
         heat_carrier_fluid_types = ["HX24", "HX35", "Kilfrost GEO 24%", "Kilfrost GEO 32%", "Kilfrost GEO 35%"]
         heat_carrier_fluid_densities = [970.5, 955, 1105.5, 1136.2, 1150.6]
